@@ -1,101 +1,106 @@
-use core::{fmt, num, str};
+use core::{fmt, num};
 
 #[derive(Debug)]
 pub enum Error {
-    RangeError,
-    ParseIntError(num::ParseIntError),
-    ParseError,
+    Range,
+    ParseInt(num::ParseIntError),
+    Parse,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SimpleYear;
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ExtendedYear<const N: usize>;
+
+pub trait YearDigits {
+    fn digits() -> usize;
+    fn from_digits(digits: i32) -> Result<Year<Self>, Error> where Self: Sized;
 }
 
-/// Marker struct for [`Year`] to signify no negative possibility
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NonNegative;
-/// Marker struct for [`Year`] to signify a negative possibility
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct WithNegative;
-
-/// Extendable year to allow for negative years and more than 4 digits
-///
-/// See [`StandardYear`] for simple year usage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Year<const N: usize = 4, T = NonNegative>(i32, T);
-
-/// Standard 4 digit, non-negative year
-///
-/// See [`Year`]
-pub type StandardYear = Year<4, NonNegative>;
-
-impl<const N: usize> Year<N, WithNegative> {
-    pub fn new(year: i32) -> Result<Self, Error> {
-        if year == 0 {
-            return Ok(Self(year, WithNegative));
-        }
-        let year = match year.checked_abs().and_then(|x| x.checked_ilog10()) {
-            Some(num) if (num as usize) < N => year,
-            Some(_) => return Err(Error::RangeError),
-            None => return Err(Error::RangeError),
-        };
-        Ok(Self(year, WithNegative))
+impl YearDigits for SimpleYear {
+    fn digits() -> usize {
+        4
+    }
+    fn from_digits(digits: i32) -> Result<Year<Self>, Error> {
+        Year::new(digits)
     }
 }
 
-impl<const N: usize> Year<N, NonNegative> {
-    pub fn new(year: i32) -> Result<Self, Error> {
-        if year < 0 {
-            return Err(Error::RangeError);
-        }
+impl<const N: usize> YearDigits for ExtendedYear<N> {
+    fn digits() -> usize {
+        N
+    }
+    fn from_digits(digits: i32) -> Result<Year<Self>, Error> {
+        Year::new_extended(digits)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Year<Y = SimpleYear>(i32, Y);
+
+impl<const N: usize> Year<ExtendedYear<N>> {
+    pub fn new_extended(year: i32) -> Result<Self, Error> {
         if year == 0 {
-            return Ok(Self(year, NonNegative));
+            return Ok(Self(year, ExtendedYear));
         }
         let year = match year.checked_abs().and_then(|x| x.checked_ilog10()) {
             Some(num) if (num as usize) < N => year,
-            Some(_) => return Err(Error::RangeError),
-            None => return Err(Error::RangeError),
+            Some(_) => return Err(Error::Range),
+            None => return Err(Error::Range),
         };
-        Ok(Self(year, NonNegative))
+        Ok(Self(year, ExtendedYear))
+    }
+}
+
+impl Year<SimpleYear> {
+    pub fn new(year: i32) -> Result<Self, Error> {
+        if year < 0 || year > 9999 {
+            return Err(Error::Range);
+        }
+
+        Ok(Self(year, SimpleYear))
     }
 }
 
 #[cfg(test)]
 mod year_test {
-    use super::{StandardYear, WithNegative, Year};
+    use super::{ExtendedYear, Year};
 
     #[test]
     fn test_year_4_digits() {
-        assert!(StandardYear::new(0).is_ok());
-        assert!(StandardYear::new(1).is_ok());
-        assert!(StandardYear::new(9999).is_ok());
-        assert!(StandardYear::new(10000).is_err());
-        assert_eq!(format!("{}", StandardYear::new(1).unwrap()), "0001");
+        assert!(Year::new(0).is_ok());
+        assert!(Year::new(1).is_ok());
+        assert!(Year::new(9999).is_ok());
+        assert!(Year::new(10000).is_err());
+        assert_eq!(format!("{}", Year::new(1).unwrap()), "0001");
     }
 
     #[test]
     fn test_negative_years() {
-        assert!(StandardYear::new(-1).is_err());
-        assert!(Year::<6, WithNegative>::new(-1).is_ok());
+        assert!(Year::new(-1).is_err());
+        assert!(Year::<ExtendedYear<6>>::new_extended(-1).is_ok());
         assert_eq!(
-            format!("{}", Year::<6, WithNegative>::new(-1).unwrap()),
+            format!("{}", Year::<ExtendedYear<6>>::new_extended(-1).unwrap()),
             "-000001"
         );
     }
 
     #[test]
     fn test_big_years() {
-        assert!(Year::<6, WithNegative>::new(100000).is_ok());
+        assert!(Year::<ExtendedYear<6>>::new_extended(100000).is_ok());
         assert_eq!(
-            format!("{}", Year::<6, WithNegative>::new(1).unwrap()),
+            format!("{}", Year::<ExtendedYear<6>>::new_extended(1).unwrap()),
             "+000001"
         );
     }
 }
 
-impl<const N: usize> fmt::Display for Year<N, NonNegative> {
+impl fmt::Display for Year<SimpleYear> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:0>width$}", self.0, width = N)
+        write!(f, "{:0>width$}", self.0, width = 4)
     }
 }
 
-impl<const N: usize> fmt::Display for Year<N, WithNegative> {
+impl<const N: usize> fmt::Display for Year<ExtendedYear<N>> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -114,7 +119,7 @@ macro_rules! impl_try_from {
             #[allow(unused_comparisons)]
             fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                 if value < 0 {
-                    return Err(Error::RangeError);
+                    return Err(Error::Range);
                 }
                 $structtype::new(value as i32)
             }
@@ -122,71 +127,32 @@ macro_rules! impl_try_from {
     };
 }
 
-impl_try_from!(u8, StandardYear);
-impl_try_from!(u16, StandardYear);
-impl_try_from!(u32, StandardYear);
-impl_try_from!(u64, StandardYear);
-impl_try_from!(i8, StandardYear);
-impl_try_from!(i16, StandardYear);
-impl_try_from!(i32, StandardYear);
-impl_try_from!(i64, StandardYear);
+impl_try_from!(u8, Year);
+impl_try_from!(u16, Year);
+impl_try_from!(u32, Year);
+impl_try_from!(u64, Year);
+impl_try_from!(i8, Year);
+impl_try_from!(i16, Year);
+impl_try_from!(i32, Year);
+impl_try_from!(i64, Year);
 
 macro_rules! impl_into {
     ($primitive:ty, $structtype:ident) => {
-        impl Into<$primitive> for $structtype {
-            fn into(self) -> $primitive {
-                self.0 as $primitive
+        impl From<$structtype> for $primitive {
+            fn from(value: $structtype) -> $primitive {
+                value.0 as $primitive
             }
         }
     };
 }
 
+impl_into!(u8, Year);
+impl_into!(u16, Year);
+impl_into!(u32, Year);
+impl_into!(u64, Year);
+impl_into!(i16, Year);
 impl_into!(i32, Year);
 impl_into!(i64, Year);
-
-/// An amount of years
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct YearDuration(u64);
-
-impl YearDuration {
-    pub fn new(year: u64) -> Self {
-        Self(year)
-    }
-}
-
-impl fmt::Display for YearDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}Y", self.0))
-    }
-}
-
-impl str::FromStr for YearDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("Y")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-macro_rules! impl_from {
-    ($primitive:ty, $structtype:ident) => {
-        impl From<$primitive> for $structtype {
-            fn from(value: $primitive) -> Self {
-                Self::new(value as u64)
-            }
-        }
-    };
-}
-
-impl_from!(u8, YearDuration);
-impl_from!(u16, YearDuration);
-impl_from!(u32, YearDuration);
-impl_from!(u64, YearDuration);
-
-impl_into!(u64, YearDuration);
 
 /// Month of the year (1-12)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -195,10 +161,10 @@ pub struct Month(u8);
 impl Month {
     pub fn new(month: u64) -> Result<Self, Error> {
         if month == 0 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         if month > 12 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Self(month as u8))
     }
@@ -217,7 +183,7 @@ macro_rules! impl_try_from {
             #[allow(unused_comparisons)]
             fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                 if value < 0 {
-                    return Err(Error::RangeError);
+                    return Err(Error::Range);
                 }
                 $structtype::new(value as u64)
             }
@@ -242,50 +208,6 @@ impl_into!(i16, Month);
 impl_into!(i32, Month);
 impl_into!(i64, Month);
 
-/// An amount of months
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MonthDuration(u64);
-
-impl MonthDuration {
-    pub fn new(month: u64) -> Self {
-        Self(month)
-    }
-}
-
-impl fmt::Display for MonthDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_fmt(format_args!("{}M", self.0))
-    }
-}
-
-impl str::FromStr for MonthDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("M")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-macro_rules! impl_from {
-    ($primitive:ty, $structtype:ident) => {
-        impl From<$primitive> for $structtype {
-            fn from(value: $primitive) -> Self {
-                Self::new(value as u64)
-            }
-        }
-    };
-}
-
-impl_from!(u8, MonthDuration);
-impl_from!(u16, MonthDuration);
-impl_from!(u32, MonthDuration);
-impl_from!(u64, MonthDuration);
-
-impl_into!(u64, MonthDuration);
-
 /// Week of the year (1-53)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Week(u8);
@@ -293,7 +215,7 @@ pub struct Week(u8);
 impl Week {
     pub fn new(week: u64) -> Result<Self, Error> {
         if week > 53 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Self(week as u8))
     }
@@ -322,46 +244,6 @@ impl_into!(i16, Week);
 impl_into!(i32, Week);
 impl_into!(i64, Week);
 
-/// An amount of weeks
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct WeekDuration(u64);
-
-impl WeekDuration {
-    pub fn new(week: u64) -> Self {
-        Self(week)
-    }
-}
-
-impl fmt::Display for WeekDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}W", self.0)
-    }
-}
-
-impl str::FromStr for WeekDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("W")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-impl Into<std::time::Duration> for WeekDuration {
-    fn into(self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.0 * 60 * 60 * 24 * 7)
-    }
-}
-
-impl_from!(u8, WeekDuration);
-impl_from!(u16, WeekDuration);
-impl_from!(u32, WeekDuration);
-impl_from!(u64, WeekDuration);
-
-impl_into!(u64, WeekDuration);
-
 /// Day of the month (1-31)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Day(u8);
@@ -369,10 +251,10 @@ pub struct Day(u8);
 impl Day {
     pub fn new(day: u64) -> Result<Self, Error> {
         if day == 0 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         if day > 31 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Self(day as u8))
     }
@@ -391,7 +273,7 @@ macro_rules! impl_try_from {
             #[allow(unused_comparisons)]
             fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                 if value < 0 {
-                    return Err(Error::RangeError);
+                    return Err(Error::Range);
                 }
                 $structtype::new(value as u64)
             }
@@ -416,46 +298,6 @@ impl_into!(i16, Day);
 impl_into!(i32, Day);
 impl_into!(i64, Day);
 
-/// An amount of days
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct DayDuration(u64);
-
-impl DayDuration {
-    pub fn new(day: u64) -> Self {
-        Self(day)
-    }
-}
-
-impl fmt::Display for DayDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}D", self.0)
-    }
-}
-
-impl str::FromStr for DayDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("D")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-impl Into<std::time::Duration> for DayDuration {
-    fn into(self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.0 * 60 * 60 * 24)
-    }
-}
-
-impl_from!(u8, DayDuration);
-impl_from!(u16, DayDuration);
-impl_from!(u32, DayDuration);
-impl_from!(u64, DayDuration);
-
-impl_into!(u64, DayDuration);
-
 /// Hours (0-60)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hour(u8);
@@ -463,7 +305,7 @@ pub struct Hour(u8);
 impl Hour {
     pub fn new(hour: u64) -> Result<Hour, Error> {
         if hour > 24 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Hour(hour as u8))
     }
@@ -482,7 +324,7 @@ macro_rules! impl_try_from {
             #[allow(unused_comparisons)]
             fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                 if value < 0 {
-                    return Err(Error::RangeError);
+                    return Err(Error::Range);
                 }
                 $structtype::new(value as u64)
             }
@@ -507,46 +349,6 @@ impl_into!(i16, Hour);
 impl_into!(i32, Hour);
 impl_into!(i64, Hour);
 
-/// An amount of hours
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HourDuration(u64);
-
-impl HourDuration {
-    pub fn new(hour: u64) -> Self {
-        Self(hour)
-    }
-}
-
-impl fmt::Display for HourDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}H", self.0)
-    }
-}
-
-impl str::FromStr for HourDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("H")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-impl Into<std::time::Duration> for HourDuration {
-    fn into(self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.0 * 60 * 60)
-    }
-}
-
-impl_from!(u8, HourDuration);
-impl_from!(u16, HourDuration);
-impl_from!(u32, HourDuration);
-impl_from!(u64, HourDuration);
-
-impl_into!(u64, HourDuration);
-
 /// Minutes (0-60)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Minute(u8);
@@ -554,7 +356,7 @@ pub struct Minute(u8);
 impl Minute {
     pub fn new(minute: u64) -> Result<Minute, Error> {
         if minute > 60 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Minute(minute as u8))
     }
@@ -583,46 +385,6 @@ impl_into!(i16, Minute);
 impl_into!(i32, Minute);
 impl_into!(i64, Minute);
 
-/// An amount of minutes
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct MinuteDuration(u64);
-
-impl MinuteDuration {
-    pub fn new(hour: u64) -> Self {
-        Self(hour)
-    }
-}
-
-impl fmt::Display for MinuteDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}M", self.0)
-    }
-}
-
-impl str::FromStr for MinuteDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("M")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-impl Into<std::time::Duration> for MinuteDuration {
-    fn into(self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.0 * 60)
-    }
-}
-
-impl_from!(u8, MinuteDuration);
-impl_from!(u16, MinuteDuration);
-impl_from!(u32, MinuteDuration);
-impl_from!(u64, MinuteDuration);
-
-impl_into!(u64, MinuteDuration);
-
 /// Seconds (0-61)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Second(u8);
@@ -630,7 +392,7 @@ pub struct Second(u8);
 impl Second {
     pub fn new(second: u64) -> Result<Second, Error> {
         if second > 61 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Second(second as u8))
     }
@@ -659,46 +421,6 @@ impl_into!(i16, Second);
 impl_into!(i32, Second);
 impl_into!(i64, Second);
 
-/// An amount of seconds
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct SecondDuration(u64);
-
-impl SecondDuration {
-    pub fn new(hour: u64) -> Self {
-        Self(hour)
-    }
-}
-
-impl fmt::Display for SecondDuration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}M", self.0)
-    }
-}
-
-impl str::FromStr for SecondDuration {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.strip_suffix("M")
-            .ok_or_else(|| Error::ParseError)
-            .and_then(|s| s.parse().map_err(|e| Error::ParseIntError(e)))
-            .map(|x| Self::new(x))
-    }
-}
-
-impl Into<std::time::Duration> for SecondDuration {
-    fn into(self) -> std::time::Duration {
-        std::time::Duration::from_secs(self.0)
-    }
-}
-
-impl_from!(u8, SecondDuration);
-impl_from!(u16, SecondDuration);
-impl_from!(u32, SecondDuration);
-impl_from!(u64, SecondDuration);
-
-impl_into!(u64, SecondDuration);
-
 /// Used in combination with [`Second`] to signify subsecond fractions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Nanosecond(u32);
@@ -706,7 +428,7 @@ pub struct Nanosecond(u32);
 impl Nanosecond {
     pub fn new(nanoseconds: u64) -> Result<Self, Error> {
         if nanoseconds >= 1_000_000_000 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         Ok(Self(nanoseconds as u32))
     }
@@ -725,7 +447,7 @@ macro_rules! impl_try_from {
             #[allow(unused_comparisons)]
             fn try_from(value: $primitive) -> Result<Self, Self::Error> {
                 if value < 0 {
-                    return Err(Error::RangeError);
+                    return Err(Error::Range);
                 }
                 $structtype::new(value as u64)
             }
@@ -747,7 +469,7 @@ impl_into!(i64, Nanosecond);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Timeshift {
-    UTC,
+    Utc,
     Offset {
         non_negative: bool,
         hours: Hour,
@@ -757,7 +479,7 @@ pub enum Timeshift {
 
 impl Timeshift {
     pub fn utc() -> Self {
-        Self::UTC
+        Self::Utc
     }
     pub fn offset(non_negative: bool, hours: Hour, minutes: Minute) -> Self {
         Self::Offset {
@@ -783,7 +505,7 @@ impl Timeshift {
 
     pub(crate) fn seconds_from_east(&self) -> i32 {
         match self {
-            Timeshift::UTC => 0,
+            Timeshift::Utc => 0,
             Timeshift::Offset {
                 non_negative,
                 hours,
@@ -802,7 +524,7 @@ impl Timeshift {
 impl fmt::Display for Timeshift {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UTC => write!(f, "Z"),
+            Self::Utc => write!(f, "Z"),
             Self::Offset {
                 non_negative,
                 hours,
@@ -822,7 +544,7 @@ impl TryFrom<(i32, i32)> for Timeshift {
 
     fn try_from((h, m): (i32, i32)) -> Result<Self, Self::Error> {
         if m < 0 {
-            return Err(Error::RangeError);
+            return Err(Error::Range);
         }
         if h < 0 {
             Ok(Timeshift::Offset {

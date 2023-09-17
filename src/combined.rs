@@ -3,23 +3,23 @@ use core::fmt;
 #[cfg(feature = "chrono")]
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 
-use crate::components::{Day, Error, Hour, Minute, Month, Nanosecond, Second, Timeshift, Year};
+use crate::{components::{Day, Error, Hour, Minute, Month, Nanosecond, Second, Timeshift, SimpleYear}, Year};
 
 /// Date without time shift information
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LocalDate<const Y: usize = 4> {
+pub struct LocalDate<Y = SimpleYear> {
     pub year: Year<Y>,
     pub month: Month,
     pub day: Day,
 }
 
-impl<const Y: usize> LocalDate<Y> {
+impl<Y> LocalDate<Y> {
     pub fn new(year: Year<Y>, month: Month, day: Day) -> Self {
         Self { year, month, day }
     }
 }
 
-impl<const Y: usize> fmt::Display for LocalDate<Y> {
+impl fmt::Display for LocalDate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}-{}-{}", self.year, self.month, self.day)
     }
@@ -42,9 +42,9 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<NaiveDate> for LocalDate {
-    fn into(self) -> NaiveDate {
-        NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+impl From<LocalDate> for NaiveDate {
+    fn from(val: LocalDate) -> Self {
+        NaiveDate::from_ymd_opt(val.year.into(), val.month.into(), val.day.into())
             .expect("internal values are already range checked")
     }
 }
@@ -91,9 +91,9 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<NaiveTime> for LocalTime {
-    fn into(self) -> NaiveTime {
-        NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+impl From<LocalTime> for NaiveTime {
+    fn from(val: LocalTime) -> Self {
+        NaiveTime::from_hms_opt(val.hour.into(), val.minute.into(), val.second.into())
             .expect("internal values are already range checked")
     }
 }
@@ -124,7 +124,7 @@ impl fmt::Display for PreciseLocalTime {
         let ns = if self.nanosecond == Nanosecond::new(0).unwrap() {
             "0"
         } else {
-            ns_string.trim_end_matches("0")
+            ns_string.trim_end_matches('0')
         };
         write!(f, "{}:{}:{}.{}", self.hour, self.minute, self.second, ns)
     }
@@ -150,13 +150,13 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<NaiveTime> for PreciseLocalTime {
-    fn into(self) -> NaiveTime {
+impl From<PreciseLocalTime> for NaiveTime {
+    fn from(val: PreciseLocalTime) -> Self {
         NaiveTime::from_hms_nano_opt(
-            self.hour.into(),
-            self.minute.into(),
-            self.second.into(),
-            self.nanosecond.into(),
+            val.hour.into(),
+            val.minute.into(),
+            val.second.into(),
+            val.nanosecond.into(),
         )
         .expect("internal values are already range checked")
     }
@@ -164,8 +164,8 @@ impl Into<NaiveTime> for PreciseLocalTime {
 
 /// Date and time without time shift information
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LocalDateTime {
-    pub year: Year,
+pub struct LocalDateTime<Y = SimpleYear> {
+    pub year: Year<Y>,
     pub month: Month,
     pub day: Day,
     pub hour: Hour,
@@ -173,9 +173,9 @@ pub struct LocalDateTime {
     pub second: Second,
 }
 
-impl LocalDateTime {
+impl<Y> LocalDateTime<Y> {
     pub fn new(
-        year: Year,
+        year: Year<Y>,
         month: Month,
         day: Day,
         hour: Hour,
@@ -229,12 +229,12 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<NaiveDateTime> for LocalDateTime {
-    fn into(self) -> NaiveDateTime {
+impl From<LocalDateTime> for NaiveDateTime {
+    fn from(val: LocalDateTime) -> Self {
         NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+            NaiveDate::from_ymd_opt(val.year.into(), val.month.into(), val.day.into())
                 .expect("internal values are already range checked"),
-            NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+            NaiveTime::from_hms_opt(val.hour.into(), val.minute.into(), val.second.into())
                 .expect("internal values are already range checked"),
         )
     }
@@ -242,8 +242,8 @@ impl Into<NaiveDateTime> for LocalDateTime {
 
 /// Date and time without time shift information, with nanosecond precision
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PreciseLocalDateTime {
-    pub year: Year,
+pub struct PreciseLocalDateTime<Y = SimpleYear> {
+    pub year: Year<Y>,
     pub month: Month,
     pub day: Day,
     pub hour: Hour,
@@ -252,9 +252,9 @@ pub struct PreciseLocalDateTime {
     pub nanosecond: Nanosecond,
 }
 
-impl PreciseLocalDateTime {
+impl<Y> PreciseLocalDateTime<Y> {
     pub fn new(
-        year: Year,
+        year: Year<Y>,
         month: Month,
         day: Day,
         hour: Hour,
@@ -280,7 +280,7 @@ impl fmt::Display for PreciseLocalDateTime {
         let ns = if self.nanosecond == Nanosecond::new(0).unwrap() {
             "0"
         } else {
-            ns_string.trim_end_matches("0")
+            ns_string.trim_end_matches('0')
         };
         write!(
             f,
@@ -318,16 +318,16 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<NaiveDateTime> for PreciseLocalDateTime {
-    fn into(self) -> NaiveDateTime {
+impl From<PreciseLocalDateTime> for NaiveDateTime {
+    fn from(val: PreciseLocalDateTime) -> Self {
         NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+            NaiveDate::from_ymd_opt(val.year.into(), val.month.into(), val.day.into())
                 .expect("internal values are already range checked"),
             NaiveTime::from_hms_nano_opt(
-                self.hour.into(),
-                self.minute.into(),
-                self.second.into(),
-                self.nanosecond.into(),
+                val.hour.into(),
+                val.minute.into(),
+                val.second.into(),
+                val.nanosecond.into(),
             )
             .expect("internal values are already range checked"),
         )
@@ -336,8 +336,8 @@ impl Into<NaiveDateTime> for PreciseLocalDateTime {
 
 /// Date and time with time shift information
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ShiftedDateTime {
-    pub year: Year,
+pub struct ShiftedDateTime<Y = SimpleYear> {
+    pub year: Year<Y>,
     pub month: Month,
     pub day: Day,
     pub hour: Hour,
@@ -346,9 +346,9 @@ pub struct ShiftedDateTime {
     pub timeshift: Timeshift,
 }
 
-impl ShiftedDateTime {
+impl<Y> ShiftedDateTime<Y> {
     pub fn new(
-        year: Year,
+        year: Year<Y>,
         month: Month,
         day: Day,
         hour: Hour,
@@ -406,16 +406,16 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<DateTime<FixedOffset>> for ShiftedDateTime {
-    fn into(self) -> DateTime<FixedOffset> {
+impl From<ShiftedDateTime> for DateTime<FixedOffset> {
+    fn from(val: ShiftedDateTime) -> Self {
         DateTime::from_local(
             NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+                NaiveDate::from_ymd_opt(val.year.into(), val.month.into(), val.day.into())
                     .expect("internal values are already range checked"),
-                NaiveTime::from_hms_opt(self.hour.into(), self.minute.into(), self.second.into())
+                NaiveTime::from_hms_opt(val.hour.into(), val.minute.into(), val.second.into())
                     .expect("internal values are already range checked"),
             ),
-            FixedOffset::east_opt(self.timeshift.seconds_from_east())
+            FixedOffset::east_opt(val.timeshift.seconds_from_east())
                 .expect("internal values are already range checked"),
         )
     }
@@ -427,7 +427,7 @@ impl TryInto<DateTime<Utc>> for ShiftedDateTime {
 
     fn try_into(self) -> Result<DateTime<Utc>, Self::Error> {
         match self.timeshift {
-            Timeshift::UTC => Ok(DateTime::<Utc>::from_local(
+            Timeshift::Utc => Ok(DateTime::<Utc>::from_local(
                 NaiveDateTime::new(
                     NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
                         .expect("internal values are already range checked"),
@@ -451,8 +451,8 @@ impl TryInto<DateTime<Utc>> for ShiftedDateTime {
 
 /// Date and with time shift information, with nanosecond precision
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PreciseShiftedDateTime {
-    pub year: Year,
+pub struct PreciseShiftedDateTime<Y = SimpleYear> {
+    pub year: Year<Y>,
     pub month: Month,
     pub day: Day,
     pub hour: Hour,
@@ -462,9 +462,9 @@ pub struct PreciseShiftedDateTime {
     pub timeshift: Timeshift,
 }
 
-impl PreciseShiftedDateTime {
+impl<Y> PreciseShiftedDateTime<Y> {
     pub fn new(
-        year: Year,
+        year: Year<Y>,
         month: Month,
         day: Day,
         hour: Hour,
@@ -492,7 +492,7 @@ impl fmt::Display for PreciseShiftedDateTime {
         let ns = if self.nanosecond == Nanosecond::new(0).unwrap() {
             "0"
         } else {
-            ns_string.trim_end_matches("0")
+            ns_string.trim_end_matches('0')
         };
         write!(
             f,
@@ -539,21 +539,21 @@ where
 }
 
 #[cfg(feature = "chrono")]
-impl Into<DateTime<FixedOffset>> for PreciseShiftedDateTime {
-    fn into(self) -> DateTime<FixedOffset> {
+impl From<PreciseShiftedDateTime> for DateTime<FixedOffset> {
+    fn from(val: PreciseShiftedDateTime) -> Self {
         DateTime::from_local(
             NaiveDateTime::new(
-                NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
+                NaiveDate::from_ymd_opt(val.year.into(), val.month.into(), val.day.into())
                     .expect("internal values are already range checked"),
                 NaiveTime::from_hms_nano_opt(
-                    self.hour.into(),
-                    self.minute.into(),
-                    self.second.into(),
-                    self.nanosecond.into(),
+                    val.hour.into(),
+                    val.minute.into(),
+                    val.second.into(),
+                    val.nanosecond.into(),
                 )
                 .expect("internal values are already range checked"),
             ),
-            FixedOffset::east_opt(self.timeshift.seconds_from_east())
+            FixedOffset::east_opt(val.timeshift.seconds_from_east())
                 .expect("internal values are already range checked"),
         )
     }
@@ -565,7 +565,7 @@ impl TryInto<DateTime<Utc>> for PreciseShiftedDateTime {
 
     fn try_into(self) -> Result<DateTime<Utc>, Self::Error> {
         match self.timeshift {
-            Timeshift::UTC => Ok(DateTime::<Utc>::from_local(
+            Timeshift::Utc => Ok(DateTime::<Utc>::from_local(
                 NaiveDateTime::new(
                     NaiveDate::from_ymd_opt(self.year.into(), self.month.into(), self.day.into())
                         .expect("internal values are already range checked"),

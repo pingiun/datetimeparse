@@ -20,7 +20,7 @@ pub enum ParseError<'a> {
 }
 
 impl<'a> fmt::Display for ParseError<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
         todo!()
     }
 }
@@ -28,13 +28,13 @@ impl<'a> fmt::Display for ParseError<'a> {
 impl<'a> Error for ParseError<'a> {}
 
 impl<'a> From<Utf8Error> for ParseError<'a> {
-    fn from(value: Utf8Error) -> Self {
+    fn from(_value: Utf8Error) -> Self {
         ParseError::Utf8Error
     }
 }
 
 impl<'a> From<ParseIntError> for ParseError<'a> {
-    fn from(value: ParseIntError) -> Self {
+    fn from(_value: ParseIntError) -> Self {
         ParseError::InvalidNumber
     }
 }
@@ -42,9 +42,9 @@ impl<'a> From<ParseIntError> for ParseError<'a> {
 impl<'a> From<components::Error> for ParseError<'a> {
     fn from(value: components::Error) -> Self {
         match value {
-            components::Error::RangeError => ParseError::RangeError,
-            components::Error::ParseIntError(_) => ParseError::InvalidNumber,
-            components::Error::ParseError => ParseError::Fail(b""),
+            components::Error::Range => ParseError::RangeError,
+            components::Error::ParseInt(_) => ParseError::InvalidNumber,
+            components::Error::Parse => ParseError::Fail(b""),
         }
     }
 }
@@ -113,7 +113,7 @@ pub(crate) fn take_until<'a>(
     take_while(move |x| !cond(x))
 }
 
-pub(crate) fn parse_n_digits<'a>(n: usize, input: &'a [u8]) -> ParseResult<'a, u64> {
+pub(crate) fn parse_n_digits(n: usize, input: &[u8]) -> ParseResult<'_, u64> {
     let (digits, rest) = take_n(n)(input)?;
     let number: u64 = str::from_utf8(digits)?.parse()?;
     Ok((number, rest))

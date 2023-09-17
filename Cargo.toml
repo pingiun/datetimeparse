@@ -3,6 +3,7 @@ name = "datetimeparse"
 description = "Correct ISO 8601 and RFC3999 parsing and formatting"
 license = "EUPL-1.2"
 repository = "https://github.com/pingiun/datetimeparse"
+documentation = "https://docs.rs/datetimeparse"
 version = "0.2.0"
 edition = "2021"
 

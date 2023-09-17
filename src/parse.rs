@@ -5,13 +5,63 @@ use crate::{
         LocalDate, LocalDateTime, LocalTime, PreciseLocalDateTime, PreciseLocalTime,
         PreciseShiftedDateTime, ShiftedDateTime,
     },
-    components::{Day, Hour, Minute, Month, Nanosecond, Second, StandardYear, Timeshift, Year},
-    parse_utils::{is_digit, parse_n_digits, tag, take_while, ParseError, any_of},
+    components::{
+        Day, ExtendedYear, Hour, Minute, Month, Nanosecond, Second, SimpleYear, Timeshift, Year,
+        YearDigits,
+    },
+    parse_utils::{any_of, is_digit, parse_n_digits, tag, take_while, ParseError},
 };
 
+pub struct Builder {
+    context: ParseContext,
+}
+
+impl Builder {
+    pub fn new_iso8601() -> Self {
+        Self {
+            context: ParseContext::new_iso8601(),
+        }
+    }
+    pub fn new_rfc3339() -> Self {
+        Self {
+            context: ParseContext::new_rfc3339(),
+        }
+    }
+    pub fn new_strict_rfc3339() -> Self {
+        Self {
+            context: ParseContext::new_strict_rfc3339(),
+        }
+    }
+    pub fn space_allowed(&mut self, allowed: bool) -> &mut Self {
+        self.context.space_as_date_time_separator = allowed;
+        self
+    }
+    pub fn empty_date_separator_allowed(&mut self, allowed: bool) -> &mut Self {
+        self.context.empty_date_separator = allowed;
+        self
+    }
+    pub fn empty_time_separator_allowed(&mut self, allowed: bool) -> &mut Self {
+        self.context.empty_time_separator = allowed;
+        self
+    }
+    pub fn year_digits(&mut self, digits: usize) -> &mut Self {
+        self.context.year_digits = digits;
+        self
+    }
+    pub fn into_parser(self) -> Parser<Year> {
+        self.context.into_parser()
+    }
+}
+
+impl Default for Builder {
+    fn default() -> Self {
+        Self::new_iso8601()
+    }
+}
+
 #[derive(Debug)]
-pub enum Element<Y = Year> {
-    Year(Y),
+pub enum Element<Y = SimpleYear> {
+    Year(Year<Y>),
     Month(Month),
     Day(Day),
     Hour(Hour),
@@ -33,15 +83,18 @@ pub enum ElementTag {
     Timeshift,
 }
 
-pub struct Parser {
-    elements: VecDeque<Element>,
+pub struct Parser<Y = SimpleYear> {
+    elements: VecDeque<Element<Y>>,
     context: ParseContext,
 }
 
 #[derive(Debug)]
-pub enum BuildError {
+pub enum BuildError<Y> {
     NotEnoughElements,
-    Unexpected { got: Element, expected: ElementTag },
+    Unexpected {
+        got: Element<Y>,
+        expected: ElementTag,
+    },
 }
 
 pub struct ParseContext {
@@ -50,6 +103,7 @@ pub struct ParseContext {
     empty_time_separator: bool,
     negative_zero: bool,
     lower_case_t_z: bool,
+    year_digits: usize,
 }
 
 impl ParseContext {
@@ -60,6 +114,7 @@ impl ParseContext {
             empty_time_separator: false,
             negative_zero: true,
             lower_case_t_z: true,
+            year_digits: 4,
         }
     }
 
@@ -70,6 +125,7 @@ impl ParseContext {
             empty_time_separator: false,
             negative_zero: true,
             lower_case_t_z: false,
+            year_digits: 4,
         }
     }
 
@@ -80,11 +136,12 @@ impl ParseContext {
             empty_time_separator: true,
             negative_zero: false,
             lower_case_t_z: false,
+            year_digits: 4,
         }
     }
 
-    pub fn into_parser(self) -> Parser {
-        Parser {
+    pub fn into_parser<Y>(self) -> Parser<Y> {
+        Parser::<Y> {
             elements: VecDeque::new(),
             context: self,
         }
@@ -125,12 +182,12 @@ impl ParseContext {
 
 impl Default for ParseContext {
     fn default() -> Self {
-        Self::new_rfc3339()
+        Self::new_iso8601()
     }
 }
 
-impl Parser {
-    pub fn new() -> Parser {
+impl Parser<SimpleYear> {
+    pub fn new() -> Parser<SimpleYear> {
         Parser {
             elements: VecDeque::new(),
             context: ParseContext::default(),
@@ -138,12 +195,30 @@ impl Parser {
     }
 }
 
-impl Parser {
+impl<const N: usize> Parser<ExtendedYear<N>> {
+    pub fn new_extended() -> Parser<ExtendedYear<N>> {
+        Parser {
+            elements: VecDeque::new(),
+            context: ParseContext::default(),
+        }
+    }
+}
+
+impl Default for Parser<SimpleYear> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<Y> Parser<Y>
+where
+    Y: YearDigits,
+{
     pub fn parse_year<'a>(&mut self, data: &'a [u8]) -> Result<&'a [u8], ParseError<'a>> {
-        let (year, rest) = parse_n_digits(4, data)?;
+        let (year, rest) = parse_n_digits(Y::digits(), data)?;
         let year = year.try_into().map_err(|_| ParseError::RangeError)?;
         self.elements
-            .push_back(Element::Year(StandardYear::new(year)?));
+            .push_back(Element::Year(Y::from_digits(year)?));
         Ok(rest)
     }
 
@@ -279,7 +354,7 @@ impl Parser {
                 .push_back(Element::Timeshift(Timeshift::utc()));
             return Ok(rest);
         }
-        if data.len() < 1 {
+        if data.is_empty() {
             return Err(ParseError::UnexpectedEof { needed: 1 });
         }
         let (non_negative, rest) = match data[0] {
@@ -323,7 +398,11 @@ impl Parser {
         let rest = self.parse_local_date_time(data)?;
         let rest = match self.parse_fractional_separator(rest) {
             Ok(rest) => self.parse_fractional_seconds(rest)?,
-            Err(ParseError::Fail(_)) => {self.elements.push_back(Element::Nanosecond(Nanosecond::new(0)?)); return Ok(rest)},
+            Err(ParseError::Fail(_)) => {
+                self.elements
+                    .push_back(Element::Nanosecond(Nanosecond::new(0)?));
+                return Ok(rest);
+            }
             Err(e) => return Err(e),
         };
         Ok(rest)
@@ -354,13 +433,17 @@ impl Parser {
         let rest = self.parse_time(data)?;
         let rest = match self.parse_fractional_separator(rest) {
             Ok(rest) => self.parse_fractional_seconds(rest)?,
-            Err(ParseError::Fail(_)) => {self.elements.push_back(Element::Nanosecond(Nanosecond::new(0)?)); return Ok(rest)},
+            Err(ParseError::Fail(_)) => {
+                self.elements
+                    .push_back(Element::Nanosecond(Nanosecond::new(0)?));
+                return Ok(rest);
+            }
             Err(e) => return Err(e),
         };
         Ok(rest)
     }
 
-    pub fn build_date(mut self) -> Result<LocalDate, BuildError> {
+    pub fn build_date(mut self) -> Result<LocalDate<Y>, BuildError<Y>> {
         let year = match self.elements.pop_front() {
             Some(Element::Year(year)) => year,
             Some(e) => {
@@ -394,7 +477,7 @@ impl Parser {
         Ok(LocalDate { year, month, day })
     }
 
-    pub fn build_time(mut self) -> Result<LocalTime, BuildError> {
+    pub fn build_time(mut self) -> Result<LocalTime, BuildError<Y>> {
         let hour = match self.elements.pop_front() {
             Some(Element::Hour(hour)) => hour,
             Some(e) => {
@@ -433,7 +516,9 @@ impl Parser {
         })
     }
 
-    pub fn build_precise_local_time(mut self) -> Result<PreciseLocalTime, BuildError> {
+    pub fn build_precise_local_time(
+        mut self,
+    ) -> Result<PreciseLocalTime, BuildError<Y>> {
         let hour = match self.elements.pop_front() {
             Some(Element::Hour(hour)) => hour,
             Some(e) => {
@@ -483,7 +568,9 @@ impl Parser {
         })
     }
 
-    pub fn build_local_date_time(mut self) -> Result<LocalDateTime, BuildError> {
+    pub fn build_local_date_time(
+        mut self,
+    ) -> Result<LocalDateTime<Y>, BuildError<Y>> {
         let year = match self.elements.pop_front() {
             Some(Element::Year(year)) => year,
             Some(e) => {
@@ -554,7 +641,9 @@ impl Parser {
         })
     }
 
-    pub fn build_shifted_date_time(mut self) -> Result<ShiftedDateTime, BuildError> {
+    pub fn build_shifted_date_time(
+        mut self,
+    ) -> Result<ShiftedDateTime<Y>, BuildError<Y>> {
         let year = match self.elements.pop_front() {
             Some(Element::Year(year)) => year,
             Some(e) => {
@@ -636,7 +725,9 @@ impl Parser {
         })
     }
 
-    pub fn build_precise_local_date_time(mut self) -> Result<PreciseLocalDateTime, BuildError> {
+    pub fn build_precise_local_date_time(
+        mut self,
+    ) -> Result<PreciseLocalDateTime<Y>, BuildError<Y>> {
         let year = match self.elements.pop_front() {
             Some(Element::Year(year)) => year,
             Some(e) => {
@@ -718,7 +809,9 @@ impl Parser {
         })
     }
 
-    pub fn build_precise_shifted_date_time(mut self) -> Result<PreciseShiftedDateTime, BuildError> {
+    pub fn build_precise_shifted_date_time(
+        mut self,
+    ) -> Result<PreciseShiftedDateTime<Y>, BuildError<Y>> {
         let year = match self.elements.pop_front() {
             Some(Element::Year(year)) => year,
             Some(e) => {
