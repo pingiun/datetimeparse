@@ -92,12 +92,13 @@ pub(crate) fn take_while<'a>(
     cond: impl Fn(u8) -> bool,
 ) -> impl Fn(&'a [u8]) -> ParseResult<&'a [u8]> {
     move |i: &'a [u8]| {
-        if i.len() == 0 {
+        if i.is_empty() {
             return Err(ParseError::UnexpectedEof { needed: 1 });
         }
         let mut idx = 0;
         while cond(i[idx]) {
-            if i.len() <= idx {
+            if idx + 1 >= i.len() {
+                idx += 1;
                 break;
             }
             idx += 1;

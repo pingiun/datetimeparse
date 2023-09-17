@@ -49,6 +49,7 @@ pub struct ParseContext {
     empty_date_separator: bool,
     empty_time_separator: bool,
     negative_zero: bool,
+    lower_case_t_z: bool,
 }
 
 impl ParseContext {
@@ -58,6 +59,7 @@ impl ParseContext {
             empty_date_separator: false,
             empty_time_separator: false,
             negative_zero: true,
+            lower_case_t_z: true,
         }
     }
 
@@ -67,6 +69,7 @@ impl ParseContext {
             empty_date_separator: false,
             empty_time_separator: false,
             negative_zero: true,
+            lower_case_t_z: false,
         }
     }
 
@@ -76,6 +79,7 @@ impl ParseContext {
             empty_date_separator: true,
             empty_time_separator: true,
             negative_zero: false,
+            lower_case_t_z: false,
         }
     }
 
@@ -100,6 +104,22 @@ impl ParseContext {
 
     fn allows_negative_zero(&self) -> bool {
         self.negative_zero
+    }
+
+    fn t_seperator_set(&self) -> &'static [&'static [u8]] {
+        if self.lower_case_t_z {
+            &[b"T", b"t"]
+        } else {
+            &[b"T"]
+        }
+    }
+
+    fn z_seperator_set(&self) -> &'static [&'static [u8]] {
+        if self.lower_case_t_z {
+            &[b"Z", b"z"]
+        } else {
+            &[b"Z"]
+        }
     }
 }
 
@@ -211,7 +231,7 @@ impl Parser {
         &mut self,
         data: &'a [u8],
     ) -> Result<&'a [u8], ParseError<'a>> {
-        let rest = match any_of(&[b"T", b"t"])(data) {
+        let rest = match any_of(self.context.t_seperator_set())(data) {
             Ok((_, rest)) => rest,
             Err(ParseError::Fail(x)) => {
                 if self.context.allows_space_as_date_time_separator() {
@@ -253,7 +273,7 @@ impl Parser {
         &mut self,
         data: &'a [u8],
     ) -> Result<&'a [u8], ParseError<'a>> {
-        let res = any_of(&[b"Z", b"z"])(data);
+        let res = any_of(self.context.z_seperator_set())(data);
         if let Ok((_, rest)) = res {
             self.elements
                 .push_back(Element::Timeshift(Timeshift::utc()));
@@ -324,6 +344,19 @@ impl Parser {
     ) -> Result<&'a [u8], ParseError<'a>> {
         let rest = self.parse_precise_local_date_time(data)?;
         let rest = self.parse_timezone_offset(rest)?;
+        Ok(rest)
+    }
+
+    pub fn parse_precise_local_time<'a>(
+        &mut self,
+        data: &'a [u8],
+    ) -> Result<&'a [u8], ParseError<'a>> {
+        let rest = self.parse_time(data)?;
+        let rest = match self.parse_fractional_separator(rest) {
+            Ok(rest) => self.parse_fractional_seconds(rest)?,
+            Err(ParseError::Fail(_)) => {self.elements.push_back(Element::Nanosecond(Nanosecond::new(0)?)); return Ok(rest)},
+            Err(e) => return Err(e),
+        };
         Ok(rest)
     }
 
