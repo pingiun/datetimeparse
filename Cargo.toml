@@ -1,5 +1,8 @@
 [package]
 name = "datetimeparse"
+description = "Correct ISO 8601 and RFC3999 parsing and formatting"
+license = "EUPL-1.2"
+repository = "https://github.com/pingiun/datetimeparse"
 version = "0.1.0"
 edition = "2021"
 
