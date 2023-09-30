@@ -1,0 +1,15 @@
+[package]
+name = "datetimeparse-capi"
+version = "0.1.0"
+license = "EUPL"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "datetimeparse"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+datetimeparse = { path = ".." }
+libc = "0.2"

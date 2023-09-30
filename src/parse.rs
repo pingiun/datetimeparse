@@ -44,11 +44,10 @@ impl Builder {
         self.context.empty_time_separator = allowed;
         self
     }
-    pub fn year_digits(&mut self, digits: usize) -> &mut Self {
-        self.context.year_digits = digits;
-        self
+    pub fn into_parser(self) -> Parser<SimpleYear> {
+        self.context.into_parser()
     }
-    pub fn into_parser(self) -> Parser<Year> {
+    pub fn into_extended_year_parser<const N: usize>(self) -> Parser<ExtendedYear<N>> {
         self.context.into_parser()
     }
 }
@@ -103,7 +102,6 @@ pub struct ParseContext {
     empty_time_separator: bool,
     negative_zero: bool,
     lower_case_t_z: bool,
-    year_digits: usize,
 }
 
 impl ParseContext {
@@ -114,7 +112,6 @@ impl ParseContext {
             empty_time_separator: false,
             negative_zero: true,
             lower_case_t_z: true,
-            year_digits: 4,
         }
     }
 
@@ -125,7 +122,6 @@ impl ParseContext {
             empty_time_separator: false,
             negative_zero: true,
             lower_case_t_z: false,
-            year_digits: 4,
         }
     }
 
@@ -136,7 +132,6 @@ impl ParseContext {
             empty_time_separator: true,
             negative_zero: false,
             lower_case_t_z: false,
-            year_digits: 4,
         }
     }
 
