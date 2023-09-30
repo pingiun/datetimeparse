@@ -463,6 +463,7 @@ pub struct PreciseShiftedDateTime<Y = SimpleYear> {
 }
 
 impl<Y> PreciseShiftedDateTime<Y> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         year: Year<Y>,
         month: Month,
